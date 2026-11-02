@@ -1,25 +1,18 @@
 package xyz.vsngamer.elevatorid;
 
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.ModLoadingContext;
-import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.config.ModConfig;
-import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.fabricmc.api.ModInitializer;
+import xyz.vsngamer.elevatorid.init.ModConfig;
 import xyz.vsngamer.elevatorid.init.Registry;
 import xyz.vsngamer.elevatorid.network.NetworkHandler;
 
-@Mod(ElevatorMod.ID)
-@Mod.EventBusSubscriber(bus = Mod.EventBusSubscriber.Bus.MOD)
-public class ElevatorMod {
+/** Port a Fabric 1.20.1 (antes @Mod de Forge). */
+public class ElevatorMod implements ModInitializer {
     public static final String ID = "elevatorid";
 
-    public ElevatorMod() {
+    @Override
+    public void onInitialize() {
+        ModConfig.load();
         Registry.init();
-        ModLoadingContext.get().registerConfig(ModConfig.Type.SERVER, xyz.vsngamer.elevatorid.init.ModConfig.SPEC);
-    }
-
-    @SubscribeEvent
-    public static void commonSetup(FMLCommonSetupEvent event) {
         NetworkHandler.init();
     }
 }

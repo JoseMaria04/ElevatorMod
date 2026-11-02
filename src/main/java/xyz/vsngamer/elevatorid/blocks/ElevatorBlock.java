@@ -21,10 +21,10 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
+import net.minecraft.world.level.block.state.properties.IntegerProperty;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
-import net.minecraftforge.network.NetworkHooks;
 import xyz.vsngamer.elevatorid.init.ModConfig;
 import xyz.vsngamer.elevatorid.tile.ElevatorTileEntity;
 import xyz.vsngamer.elevatorid.util.FakeUseContext;
@@ -36,6 +36,8 @@ import javax.annotation.Nullable;
 public class ElevatorBlock extends HorizontalDirectionalBlock implements EntityBlock {
     public static final BooleanProperty DIRECTIONAL = BooleanProperty.create("directional");
     public static final BooleanProperty SHOW_ARROW = BooleanProperty.create("show_arrow");
+    /** En Forge la luz del camuflaje salía de getLightEmission(pos); en Fabric va en el estado del bloque. */
+    public static final IntegerProperty LIGHT = IntegerProperty.create("light", 0, 15);
 
     //    private ElevatorBlockItem blockItem;
     private final DyeColor dyeColor;
@@ -48,15 +50,18 @@ public class ElevatorBlock extends HorizontalDirectionalBlock implements EntityB
                 .strength(0.8F)
                 .dynamicShape()
                 .noOcclusion()
+                .lightLevel(state -> state.getValue(LIGHT))
+                .isValidSpawn((state, level, pos, type) -> ModConfig.GENERAL.mobSpawn.get())
                 .forceSolidOn() // prevents rain/snow from falling through. TODO: check if this has any unintended side effects
         );
 
         dyeColor = color;
+        registerDefaultState(defaultBlockState().setValue(LIGHT, 0));
     }
 
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
-        builder.add(FACING, DIRECTIONAL, SHOW_ARROW);
+        builder.add(FACING, DIRECTIONAL, SHOW_ARROW, LIGHT);
     }
 
     @Nullable
@@ -101,14 +106,10 @@ public class ElevatorBlock extends HorizontalDirectionalBlock implements EntityB
             return InteractionResult.SUCCESS;
         }
 
-        NetworkHooks.openScreen((ServerPlayer) player, tile, pos);
+        player.openMenu(tile);
         return InteractionResult.SUCCESS;
     }
 
-    @Override
-    public boolean isValidSpawn(BlockState state, BlockGetter world, BlockPos pos, SpawnPlacements.Type type, @Nullable EntityType<?> entityType) {
-        return ModConfig.GENERAL.mobSpawn.get() && super.isValidSpawn(state, world, pos, type, entityType);
-    }
 
     // Collision
     @Nonnull
@@ -120,13 +121,6 @@ public class ElevatorBlock extends HorizontalDirectionalBlock implements EntityB
         return super.getCollisionShape(state, worldIn, pos, context);
     }
 
-    @Override
-    public boolean collisionExtendsVertically(BlockState state, BlockGetter world, BlockPos pos, Entity collidingEntity) {
-        ElevatorTileEntity tile = getElevatorTile(world, pos);
-        if (tile != null && tile.getHeldState() != null)
-            return tile.getHeldState().collisionExtendsVertically(world, pos, collidingEntity);
-        return super.collisionExtendsVertically(state, world, pos, collidingEntity);
-    }
 
     // Visual outline
     @Nonnull
@@ -138,13 +132,6 @@ public class ElevatorBlock extends HorizontalDirectionalBlock implements EntityB
         return super.getShape(state, worldIn, pos, context);
     }
 
-    @Override
-    public float getFriction(@Nonnull BlockState state, @Nonnull LevelReader world, @Nonnull BlockPos pos, @Nullable Entity entity) {
-        ElevatorTileEntity tile = getElevatorTile(world, pos);
-        if (tile != null && tile.getHeldState() != null)
-            return tile.getHeldState().getFriction(world, pos, entity);
-        return super.getFriction(state, world, pos, entity);
-    }
 
     @Override
     public void entityInside(@Nonnull BlockState state, @Nonnull Level worldIn, @Nonnull BlockPos pos, @Nonnull Entity entityIn) {
@@ -193,24 +180,7 @@ public class ElevatorBlock extends HorizontalDirectionalBlock implements EntityB
         return true;
     }
 
-    @Override
-    public boolean canConnectRedstone(BlockState state, BlockGetter world, BlockPos pos, @Nullable Direction side) {
-        ElevatorTileEntity tile = getElevatorTile(world, pos);
-        if (tile != null && tile.getHeldState() != null) {
-            return tile.getHeldState().canRedstoneConnectTo(world, pos, side);
-        }
-        return false;
-    }
 
-    @Override
-    public boolean shouldCheckWeakPower(BlockState state, SignalGetter level, BlockPos pos, Direction side) {
-        ElevatorTileEntity tile = getElevatorTile(level, pos);
-        if (tile != null && tile.getHeldState() != null) {
-            return tile.getHeldState().shouldCheckWeakPower(level, pos, side);
-        }
-
-        return super.shouldCheckWeakPower(state, level, pos, side);
-    }
 
     @Override
     public int getSignal(@Nonnull BlockState state, @Nonnull BlockGetter reader, @Nonnull BlockPos pos, @Nonnull Direction direction) {
@@ -230,16 +200,6 @@ public class ElevatorBlock extends HorizontalDirectionalBlock implements EntityB
         return super.getDirectSignal(state, reader, pos, direction);
     }
 
-    // Light
-    @Override
-    public int getLightEmission(BlockState state, BlockGetter world, BlockPos pos) {
-        ElevatorTileEntity tile = getElevatorTile(world, pos);
-        if (tile != null && tile.getHeldState() != null) {
-            return tile.getHeldState().getLightEmission(world, pos);
-        }
-
-        return super.getLightEmission(state, world, pos);
-    }
 
     @Override
     public boolean propagatesSkylightDown(@Nonnull BlockState state, @Nonnull BlockGetter reader, @Nonnull BlockPos pos) {
@@ -269,14 +229,6 @@ public class ElevatorBlock extends HorizontalDirectionalBlock implements EntityB
         return worldIn.getMaxLightLevel();
     }
 
-    @Override
-    public SoundType getSoundType(BlockState state, LevelReader world, BlockPos pos, @Nullable Entity entity) {
-        ElevatorTileEntity tile = getElevatorTile(world, pos);
-        if (tile != null && tile.getHeldState() != null) {
-            return tile.getHeldState().getSoundType(world, pos, entity);
-        }
-        return super.getSoundType(state, world, pos, entity);
-    }
 
     public DyeColor getColor() {
         return dyeColor;

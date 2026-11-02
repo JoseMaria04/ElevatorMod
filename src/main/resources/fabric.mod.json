@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "elevatorid",
+  "version": "${version}",
+  "name": "Elevator Mod (Fabric port)",
+  "description": "Ascensores de OpenBlocks. Port no oficial a Fabric 1.20.1 de la versión de Forge 1.20.1 de VsnGamer.",
+  "authors": ["VsnGamer (original)", "Nebula Systems (port a Fabric)"],
+  "contact": { "sources": "https://github.com/VsnGamer/ElevatorMod" },
+  "license": "MIT",
+  "icon": "logo.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["xyz.vsngamer.elevatorid.ElevatorMod"],
+    "client": ["xyz.vsngamer.elevatorid.client.ClientRegistry"]
+  },
+  "accessWidener": "elevatorid.accesswidener",
+  "depends": { "fabricloader": ">=0.14", "fabric-api": "*", "minecraft": "1.20.1" }
+}

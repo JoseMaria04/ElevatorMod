@@ -1,79 +1,82 @@
 package xyz.vsngamer.elevatorid.init;
 
-import net.minecraftforge.common.ForgeConfigSpec;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.event.config.ModConfigEvent;
-import org.apache.logging.log4j.LogManager;
-import xyz.vsngamer.elevatorid.ElevatorMod;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import net.fabricmc.loader.api.FabricLoader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import static net.minecraftforge.fml.Logging.FORGEMOD;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
-@Mod.EventBusSubscriber(modid = ElevatorMod.ID, bus = Mod.EventBusSubscriber.Bus.MOD)
+/**
+ * Mismas opciones que la ForgeConfigSpec original, guardadas en config/elevatorid.json.
+ * Ojo: en Forge era config de servidor sincronizada; aquí cada lado lee su fichero (el servidor valida igualmente).
+ */
 public class ModConfig {
-    private static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
-    public static final CommonGeneral GENERAL = new CommonGeneral(BUILDER);
-    public static final ForgeConfigSpec SPEC = BUILDER.build();
+    private static final Logger LOG = LoggerFactory.getLogger("elevatorid");
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    public static final CommonGeneral GENERAL = new CommonGeneral();
 
-    public static class CommonGeneral {
-        public final ForgeConfigSpec.BooleanValue sameColor;
-        public final ForgeConfigSpec.BooleanValue precisionTarget;
-        public final ForgeConfigSpec.BooleanValue mobSpawn;
-        public final ForgeConfigSpec.BooleanValue resetPitchNormal;
-        public final ForgeConfigSpec.BooleanValue resetPitchDirectional;
-        public final ForgeConfigSpec.IntValue range;
-        public final ForgeConfigSpec.BooleanValue useXP;
-        public final ForgeConfigSpec.IntValue XPPointsAmount;
+    public static final class Value<T> {
+        private T value;
 
-        CommonGeneral(ForgeConfigSpec.Builder builder) {
-            builder.push("General");
+        Value(T def) {
+            value = def;
+        }
 
-            sameColor = builder
-                    .comment("Should elevators have the same color in order to teleport ?")
-                    .define("sameColor", false);
-
-            range = builder
-                    .comment("Elevator range")
-                    .defineInRange("range", 384, 3, 4064);
-
-            precisionTarget = builder
-                    .comment("Realign players to the center of elevator ?")
-                    .define("precisionTarget", true);
-
-            mobSpawn = builder
-                    .worldRestart()
-                    .comment("Can mobs spawn on elevators ?")
-                    .define("mobSpawn", false);
-
-            resetPitchNormal = builder
-                    .comment("Reset pitch to 0 when teleporting to normal elevators ?")
-                    .define("resetPitchNormal", false);
-
-            resetPitchDirectional = builder
-                    .comment("Reset pitch to 0 when teleporting to directional elevators ?")
-                    .define("resetPitchDirectional", true);
-
-            useXP = builder
-                    .comment("Should teleporting require XP ?")
-                    .define("useXP", false);
-
-            XPPointsAmount = builder
-                    .comment("Amount of XP points to use when useXP is enabled", "Note this is NOT experience levels")
-                    .defineInRange("XPPointsAmount", 1, 1, Integer.MAX_VALUE);
-
-            builder.pop();
+        public T get() {
+            return value;
         }
     }
 
-    // Same debug messages as forge config
-
-    @SubscribeEvent
-    public static void onLoad(final ModConfigEvent.Loading configEvent) {
-        LogManager.getLogger().debug(FORGEMOD, "Loaded elevator config file {}", configEvent.getConfig().getFileName());
+    public static class CommonGeneral {
+        /** ¿Los ascensores tienen que ser del mismo color para teletransportar? */
+        public final Value<Boolean> sameColor = new Value<>(false);
+        /** Alcance del ascensor (3..4064) */
+        public final Value<Integer> range = new Value<>(384);
+        /** ¿Recolocar al jugador en el centro del ascensor? */
+        public final Value<Boolean> precisionTarget = new Value<>(true);
+        /** ¿Pueden aparecer mobs encima? (requiere reiniciar) */
+        public final Value<Boolean> mobSpawn = new Value<>(false);
+        public final Value<Boolean> resetPitchNormal = new Value<>(false);
+        public final Value<Boolean> resetPitchDirectional = new Value<>(true);
+        /** ¿Gastar experiencia al teletransportarse? */
+        public final Value<Boolean> useXP = new Value<>(false);
+        /** Puntos de experiencia (no niveles) por uso */
+        public final Value<Integer> XPPointsAmount = new Value<>(1);
     }
 
-    @SubscribeEvent
-    public static void onFileChange(final ModConfigEvent.Reloading configEvent) {
-        LogManager.getLogger().debug(FORGEMOD, "Elevator config just got changed on the file system!");
+    public static void load() {
+        Path file = FabricLoader.getInstance().getConfigDir().resolve("elevatorid.json");
+        CommonGeneral g = GENERAL;
+        try {
+            if (Files.exists(file)) {
+                JsonObject o = JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject();
+                if (o.has("sameColor")) g.sameColor.value = o.get("sameColor").getAsBoolean();
+                if (o.has("range")) g.range.value = Math.max(3, Math.min(4064, o.get("range").getAsInt()));
+                if (o.has("precisionTarget")) g.precisionTarget.value = o.get("precisionTarget").getAsBoolean();
+                if (o.has("mobSpawn")) g.mobSpawn.value = o.get("mobSpawn").getAsBoolean();
+                if (o.has("resetPitchNormal")) g.resetPitchNormal.value = o.get("resetPitchNormal").getAsBoolean();
+                if (o.has("resetPitchDirectional")) g.resetPitchDirectional.value = o.get("resetPitchDirectional").getAsBoolean();
+                if (o.has("useXP")) g.useXP.value = o.get("useXP").getAsBoolean();
+                if (o.has("XPPointsAmount")) g.XPPointsAmount.value = Math.max(1, o.get("XPPointsAmount").getAsInt());
+            }
+            JsonObject out = new JsonObject();
+            out.addProperty("sameColor", g.sameColor.get());
+            out.addProperty("range", g.range.get());
+            out.addProperty("precisionTarget", g.precisionTarget.get());
+            out.addProperty("mobSpawn", g.mobSpawn.get());
+            out.addProperty("resetPitchNormal", g.resetPitchNormal.get());
+            out.addProperty("resetPitchDirectional", g.resetPitchDirectional.get());
+            out.addProperty("useXP", g.useXP.get());
+            out.addProperty("XPPointsAmount", g.XPPointsAmount.get());
+            Files.writeString(file, GSON.toJson(out), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            LOG.error("No se pudo leer config/elevatorid.json; uso valores por defecto", e);
+        }
     }
 }

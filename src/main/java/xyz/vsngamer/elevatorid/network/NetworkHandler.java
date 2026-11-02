@@ -1,11 +1,12 @@
 package xyz.vsngamer.elevatorid.network;
 
+import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
-import net.minecraftforge.network.NetworkRegistry;
-import net.minecraftforge.network.simple.SimpleChannel;
 import xyz.vsngamer.elevatorid.ElevatorMod;
 import xyz.vsngamer.elevatorid.network.client.RemoveCamoPacket;
 import xyz.vsngamer.elevatorid.network.client.SetArrowPacket;
@@ -13,14 +14,14 @@ import xyz.vsngamer.elevatorid.network.client.SetDirectionalPacket;
 import xyz.vsngamer.elevatorid.network.client.SetFacingPacket;
 import xyz.vsngamer.elevatorid.tile.ElevatorContainer;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.function.BiConsumer;
+import java.util.function.Function;
+import java.util.function.Supplier;
+
 public class NetworkHandler {
-    private static final String PROTOCOL_VERSION = "1";
-    public static SimpleChannel INSTANCE = NetworkRegistry.ChannelBuilder
-            .named(new ResourceLocation(ElevatorMod.ID, "main_channel"))
-            .clientAcceptedVersions(PROTOCOL_VERSION::equals)
-            .serverAcceptedVersions(PROTOCOL_VERSION::equals)
-            .networkProtocolVersion(() -> PROTOCOL_VERSION)
-            .simpleChannel();
+    public static final Channel INSTANCE = new Channel();
 
     public static void init() {
         int i = 0;
@@ -43,5 +44,31 @@ public class NetworkHandler {
             return true;
 
         return !container.getPos().equals(pos);
+    }
+
+    /** Sustituto del SimpleChannel de Forge: un canal de Fabric por mensaje. */
+    public static final class Channel {
+        private record Msg<T>(ResourceLocation id, BiConsumer<T, FriendlyByteBuf> encoder) {}
+
+        private final Map<Class<?>, Msg<?>> byClass = new HashMap<>();
+
+        <T> void registerMessage(int index, Class<T> type, BiConsumer<T, FriendlyByteBuf> encoder, Function<FriendlyByteBuf, T> decoder,
+                                 BiConsumer<T, Supplier<NetworkEvent.Context>> handler) {
+            ResourceLocation id = new ResourceLocation(ElevatorMod.ID, "msg_" + index);
+            byClass.put(type, new Msg<>(id, encoder));
+            ServerPlayNetworking.registerGlobalReceiver(id, (server, player, listener, buf, sender) -> {
+                T msg = decoder.apply(buf);
+                NetworkEvent.Context ctx = new NetworkEvent.Context(server, player);
+                handler.accept(msg, () -> ctx);
+            });
+        }
+
+        @SuppressWarnings("unchecked")
+        public <T> void sendToServer(T msg) {
+            Msg<T> m = (Msg<T>) byClass.get(msg.getClass());
+            FriendlyByteBuf buf = PacketByteBufs.create();
+            m.encoder().accept(msg, buf);
+            net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(m.id(), buf);
+        }
     }
 }

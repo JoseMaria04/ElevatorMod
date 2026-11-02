@@ -1,5 +1,10 @@
 package xyz.vsngamer.elevatorid.tile;
 
+import net.fabricmc.fabric.api.rendering.data.v1.RenderAttachmentBlockEntity;
+import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.server.level.ServerPlayer;
+
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
@@ -20,17 +25,26 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraftforge.client.model.data.ModelData;
 import xyz.vsngamer.elevatorid.blocks.ElevatorBlock;
 import xyz.vsngamer.elevatorid.init.Registry;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
-import static xyz.vsngamer.elevatorid.client.render.ElevatorBakedModel.HELD_STATE;
 import static xyz.vsngamer.elevatorid.init.Registry.ELEVATOR_TILE_ENTITY;
 
-public class ElevatorTileEntity extends BlockEntity implements MenuProvider {
+public class ElevatorTileEntity extends BlockEntity implements ExtendedScreenHandlerFactory, RenderAttachmentBlockEntity {
+
+    @Override
+    public void writeScreenOpeningData(ServerPlayer player, FriendlyByteBuf buf) {
+        buf.writeBlockPos(worldPosition);
+    }
+
+    @Override
+    public Object getRenderAttachmentData() {
+        return heldState;
+    }
+
 
     private BlockState heldState;
 
@@ -48,6 +62,10 @@ public class ElevatorTileEntity extends BlockEntity implements MenuProvider {
         } else {
             heldState = null;
         }
+        // en el cliente, volver a dibujar el bloque con el nuevo camuflaje
+        if (level != null && level.isClientSide) {
+            level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), Block.UPDATE_ALL);
+        }
     }
 
     @Override
@@ -57,11 +75,6 @@ public class ElevatorTileEntity extends BlockEntity implements MenuProvider {
         if (heldState != null) tag.put("held_id", NbtUtils.writeBlockState(heldState));
     }
 
-    @Nonnull
-    @Override
-    public ModelData getModelData() {
-        return ModelData.builder().with(HELD_STATE, heldState).build();
-    }
 
     @Nonnull
     @Override
@@ -69,11 +82,6 @@ public class ElevatorTileEntity extends BlockEntity implements MenuProvider {
         return saveWithId();
     }
 
-    @Override
-    public void handleUpdateTag(CompoundTag tag) {
-        super.handleUpdateTag(tag);
-        markUpdated();
-    }
 
     @Nullable
     @Override
@@ -81,10 +89,6 @@ public class ElevatorTileEntity extends BlockEntity implements MenuProvider {
         return ClientboundBlockEntityDataPacket.create(this);
     }
 
-    @Override
-    public void onDataPacket(Connection net, ClientboundBlockEntityDataPacket pkt) {
-        handleUpdateTag(pkt.getTag());
-    }
 
     @Nonnull
     @Override
@@ -104,10 +108,14 @@ public class ElevatorTileEntity extends BlockEntity implements MenuProvider {
 
     private void markUpdated() {
         setChanged();
-        requestModelDataUpdate();
 
         if (level == null) {
             return;
+        }
+
+        int light = heldState != null ? heldState.getLightEmission() : 0;
+        if (!level.isClientSide && getBlockState().hasProperty(ElevatorBlock.LIGHT) && getBlockState().getValue(ElevatorBlock.LIGHT) != light) {
+            level.setBlock(worldPosition, getBlockState().setValue(ElevatorBlock.LIGHT, light), Block.UPDATE_ALL);
         }
 
         level.sendBlockUpdated(getBlockPos(), getBlockState(), getBlockState(), Block.UPDATE_ALL);

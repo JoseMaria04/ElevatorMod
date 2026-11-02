@@ -1,97 +1,84 @@
 package xyz.vsngamer.elevatorid.client.render;
 
+import net.fabricmc.fabric.api.client.model.BakedModelManagerHelper;
+import net.fabricmc.fabric.api.renderer.v1.RendererAccess;
+import net.fabricmc.fabric.api.renderer.v1.material.BlendMode;
+import net.fabricmc.fabric.api.renderer.v1.material.RenderMaterial;
+import net.fabricmc.fabric.api.renderer.v1.model.FabricBakedModel;
+import net.fabricmc.fabric.api.renderer.v1.model.ForwardingBakedModel;
+import net.fabricmc.fabric.api.renderer.v1.render.RenderContext;
+import net.fabricmc.fabric.api.rendering.data.v1.RenderAttachedBlockView;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.renderer.block.BlockRenderDispatcher;
-import net.minecraft.client.renderer.block.model.BakedQuad;
-import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.renderer.ItemBlockRenderTypes;
 import net.minecraft.client.resources.model.BakedModel;
-import net.minecraft.client.resources.model.BlockModelRotation;
-import net.minecraft.core.Direction;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.core.BlockPos;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.level.BlockAndTintGetter;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraftforge.client.ChunkRenderTypeSet;
-import net.minecraftforge.client.model.BakedModelWrapper;
-import net.minecraftforge.client.model.IQuadTransformer;
-import net.minecraftforge.client.model.QuadTransformers;
-import net.minecraftforge.client.model.data.ModelData;
-import net.minecraftforge.client.model.data.ModelProperty;
-import org.jetbrains.annotations.NotNull;
+import org.joml.Vector3f;
 import xyz.vsngamer.elevatorid.blocks.ElevatorBlock;
+import xyz.vsngamer.elevatorid.client.ClientRegistry;
 
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.function.Supplier;
 
-public class ElevatorBakedModel extends BakedModelWrapper<BakedModel> {
-
-    public static final ModelProperty<BlockState> HELD_STATE = new ModelProperty<>();
+/**
+ * Antes un BakedModelWrapper de Forge con ModelData; ahora un modelo de Fabric Rendering API:
+ * dibuja el bloque de camuflaje (dato del block entity) y la flecha girada si es direccional.
+ */
+public class ElevatorBakedModel extends ForwardingBakedModel {
 
     public ElevatorBakedModel(BakedModel originalModel) {
-        super(originalModel);
+        this.wrapped = originalModel;
     }
 
-    @Nonnull
     @Override
-    public TextureAtlasSprite getParticleIcon(@Nonnull ModelData data) {
-        BlockState state = data.get(HELD_STATE);
-        if (state != null) {
-            return Minecraft.getInstance().getBlockRenderer().getBlockModel(state).getParticleIcon(data);
-        }
-
-        return super.getParticleIcon(data);
+    public boolean isVanillaAdapter() {
+        return false;
     }
 
-    @NotNull
-    @Override
-    public ChunkRenderTypeSet getRenderTypes(@NotNull BlockState state, @NotNull RandomSource rand, @NotNull ModelData data) {
-        BlockState heldState = data.get(HELD_STATE);
-        ChunkRenderTypeSet types;
-        if (heldState != null)
-            types = Minecraft.getInstance().getBlockRenderer().getBlockModel(heldState).getRenderTypes(heldState, rand, data);
-        else
-            types = super.getRenderTypes(state, rand, data);
-
-        return ChunkRenderTypeSet.union(types, ChunkRenderTypeSet.of(RenderType.cutoutMipped()));
+    private static RenderMaterial material(BlendMode mode) {
+        return RendererAccess.INSTANCE.getRenderer().materialFinder().blendMode(0, mode).find();
     }
 
-    @Nonnull
     @Override
-    public List<BakedQuad> getQuads(BlockState state, @Nullable Direction side, @Nonnull RandomSource rand, @Nonnull ModelData extraData, RenderType renderType) {
-        List<BakedQuad> result = new ArrayList<>();
-        BlockRenderDispatcher dispatcher = Minecraft.getInstance().getBlockRenderer();
+    public void emitBlockQuads(BlockAndTintGetter blockView, BlockState state, BlockPos pos, Supplier<RandomSource> randomSupplier, RenderContext context) {
+        Minecraft mc = Minecraft.getInstance();
 
-        // Directional arrow
-        if (renderType == RenderType.cutoutMipped() && side == null) {
-            if (state.getValue(ElevatorBlock.DIRECTIONAL) && state.getValue(ElevatorBlock.SHOW_ARROW)) {
-                BakedModel arrowModel = dispatcher.getBlockModelShaper().getModelManager().getModel(new ResourceLocation("elevatorid", "arrow"));
-                BlockModelRotation rot = BlockModelRotation.by(0, (int) state.getValue(ElevatorBlock.FACING).toYRot());
-                IQuadTransformer transformer = QuadTransformers.applying(rot.getRotation().blockCenterToCorner());
-
-
-                result.addAll(transformer.process(arrowModel.getQuads(state, null, rand, extraData, renderType)));
+        // Flecha de los ascensores direccionales
+        if (state.getValue(ElevatorBlock.DIRECTIONAL) && state.getValue(ElevatorBlock.SHOW_ARROW)) {
+            BakedModel arrow = BakedModelManagerHelper.getModel(mc.getModelManager(), ClientRegistry.ARROW);
+            if (arrow != null) {
+                float angle = (float) Math.toRadians(-state.getValue(ElevatorBlock.FACING).toYRot());
+                RenderMaterial cutout = material(BlendMode.CUTOUT_MIPPED);
+                context.pushTransform(quad -> {
+                    Vector3f v = new Vector3f();
+                    for (int i = 0; i < 4; i++) {
+                        quad.copyPos(i, v);
+                        v.sub(.5f, 0, .5f).rotateY(angle).add(.5f, 0, .5f);
+                        quad.pos(i, v);
+                    }
+                    quad.material(cutout);
+                    return true;
+                });
+                ((FabricBakedModel) arrow).emitBlockQuads(blockView, state, pos, randomSupplier, context);
+                context.popTransform();
             }
         }
 
-        BlockState heldState = extraData.get(HELD_STATE);
-        if (heldState != null) {
-            var types = Minecraft.getInstance()
-                    .getBlockRenderer()
-                    .getBlockModel(heldState)
-                    .getRenderTypes(heldState, rand, ModelData.EMPTY);
-
-            if (renderType == null || types.contains(renderType)) {
-                BakedModel model = dispatcher.getBlockModel(heldState);
-                result.addAll(model.getQuads(heldState, side, rand, extraData, renderType));
-            }
-
-            return result;
+        // Camuflaje
+        Object data = ((RenderAttachedBlockView) blockView).getBlockEntityRenderAttachment(pos);
+        if (data instanceof BlockState heldState) {
+            BakedModel model = mc.getBlockRenderer().getBlockModel(heldState);
+            RenderMaterial mat = material(BlendMode.fromRenderLayer(ItemBlockRenderTypes.getChunkRenderType(heldState)));
+            context.pushTransform(quad -> {
+                quad.material(mat);
+                return true;
+            });
+            ((FabricBakedModel) model).emitBlockQuads(blockView, heldState, pos, randomSupplier, context);
+            context.popTransform();
+            return;
         }
 
-        // Fallback / original model
-        result.addAll(originalModel.getQuads(state, side, rand, extraData, renderType));
-        return result;
+        super.emitBlockQuads(blockView, state, pos, randomSupplier, context);
     }
 }
